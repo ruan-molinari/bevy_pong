@@ -199,7 +199,6 @@ fn check_for_collision(
                 Collision::Right => reflect_x = ball_velocity.x < 0.0,
             }
 
-            // TODO: collision on x-axis scores a point to opposite side and starts a new round
             if reflect_x {
                 ball_velocity.x = -ball_velocity.x;
             }
