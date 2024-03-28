@@ -26,10 +26,11 @@ const LEFT_WALL:   f32 = -(ARENA_W / 2.0);
 const RIGHT_WALL:  f32 = ARENA_W / 2.0;
 
 // Paddle
-const PADDLE_W: f32 = 10.0;
-const PADDLE_H: f32 = 100.0;
+const PADDLE_W: f32 = 20.0;
+const PADDLE_H: f32 = 200.0;
 const PADDLE_DISTANCE_TO_WALL: f32 = 20.0;
 const PADDLE_SPEED: f32 = 300.0;
+const PADDLE_ONE_INITIAL_POSITION: f32 = LEFT_WALL + WALL_THICKNESS + PADDLE_DISTANCE_TO_WALL + PADDLE_W / 2.0;
 
 fn main() {
     App::new()
@@ -161,14 +162,21 @@ fn setup(
     ));
     // Paddles
     commands.spawn((
-        MaterialMesh2dBundle {
-            mesh: Mesh2dHandle(meshes.add(Rectangle { half_size: Vec2::new(PADDLE_W, PADDLE_H) })),
-            material: materials.add(Color::ALICE_BLUE),
-            transform: Transform::from_translation(Vec3::new(
-                    LEFT_WALL + WALL_THICKNESS + PADDLE_DISTANCE_TO_WALL + PADDLE_W / 2.0,
-                    0.0,
-                    1.0,
-                )),
+        SpriteBundle {
+            transform: Transform {
+                // We need to convert our Vec2 into a Vec3, by giving it a z-coordinate
+                // This is used to determine the order of our sprites
+                translation: Vec3::new(PADDLE_ONE_INITIAL_POSITION, 0., 1.),
+                // The z-scale of 2D objects must always be 1.0,
+                // or their ordering will be affected in surprising ways.
+                // See https://github.com/bevyengine/bevy/issues/4149
+                scale: Vec3::new(PADDLE_W, PADDLE_H, 1.),
+                ..default()
+            },
+            sprite: Sprite {
+                color: Color::ALICE_BLUE,
+                ..default()
+            },
             ..default()
         },
         Paddle,
@@ -193,6 +201,31 @@ fn apply_velocity(
     }
 }
 
+fn move_paddle(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut Transform, With<Paddle>>,
+    time: Res<Time>
+) {
+    let mut paddle_transform = query.single_mut();
+    let mut direction = 0.0;
+
+    if keyboard_input.pressed(KeyCode::ArrowUp) {
+        direction += 1.0;
+    }
+
+    if keyboard_input.pressed(KeyCode::ArrowDown) {
+        direction -= 1.0;
+    }
+
+    let new_paddle_position = 
+        paddle_transform.translation.y + direction * time.delta_seconds() * PADDLE_SPEED;
+
+    let top_bound = TOP_WALL - WALL_THICKNESS - PADDLE_H / 2. - PADDLE_DISTANCE_TO_WALL;
+    let bottom_bound = BOTTOM_WALL + WALL_THICKNESS + PADDLE_H / 2. + PADDLE_DISTANCE_TO_WALL;
+
+    paddle_transform.translation.y = new_paddle_position.clamp(bottom_bound, top_bound);
+}
+
 fn check_for_collision(
     mut ball_query: Query<(&mut Velocity, &Transform), With<Ball>>,
     collider_query: Query<(Entity, &Transform), With<Collider>>,
@@ -203,7 +236,7 @@ fn check_for_collision(
     // check collision with Walls
     for (collider_entity, transform) in &collider_query {
         let collision = collide_with_side(
-            // `BALL_DIAMETER * 0.8` makes the ball overlap 20% before considerinc a
+            // `BALL_DIAMETER * 0.8` makes the ball overlap 20% before considering a
             // collision, this makes the "bounce" feel more natural
             BoundingCircle::new(ball_transform.translation.truncate(), BALL_DIAMETER * 0.8),
             Aabb2d::new(
@@ -236,31 +269,6 @@ fn check_for_collision(
             }
         }
     }
-}
-
-fn move_paddle(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, With<Paddle>>,
-    time: Res<Time>
-) {
-    let mut paddle_transform = query.single_mut();
-    let mut direction = 0.0;
-
-    if keyboard_input.pressed(KeyCode::ArrowUp) {
-        direction += 1.0;
-    }
-
-    if keyboard_input.pressed(KeyCode::ArrowDown) {
-        direction -= 1.0;
-    }
-
-    let new_paddle_position = 
-        paddle_transform.translation.y + direction * time.delta_seconds() * PADDLE_SPEED;
-
-    let top_bound = TOP_WALL + WALL_THICKNESS / 2. - PADDLE_H - PADDLE_DISTANCE_TO_WALL;
-    let bottom_bound = BOTTOM_WALL - WALL_THICKNESS / 2. + PADDLE_H + PADDLE_DISTANCE_TO_WALL;
-
-    paddle_transform.translation.y = new_paddle_position.clamp(bottom_bound, top_bound);
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
