@@ -1,11 +1,11 @@
 use bevy::{
-    math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume}, prelude::*, render::extract_component::ExtractComponent, sprite::{MaterialMesh2dBundle, Mesh2dHandle}, window::close_on_esc
+    math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume}, prelude::*, sprite::{MaterialMesh2dBundle, Mesh2dHandle}, window::close_on_esc
 };
-use iyes_perf_ui::{PerfUiCompleteBundle, PerfUiPlugin, PerfUiRoot};
+use iyes_perf_ui::{PerfUiCompleteBundle, PerfUiPlugin};
 
 // Ball
-const BALL_INITIAL_POSITION:  Vec3 = Vec3::new(0.0, 0.0, 1.0);
-const BALL_INITIAL_DIRECTION: Vec2 = Vec2::new(0.5, 0.5);
+const BALL_INITIAL_POSITION:  Vec3 = Vec3::new(200.0, 0.0, 1.0);
+const BALL_INITIAL_DIRECTION: Vec2 = Vec2::new(0.5, 0.0);
 const BALL_SPEED: f32 = 400.0;
 const BALL_DIAMETER: f32 = 25.0;
 
@@ -25,6 +25,11 @@ const BOTTOM_WALL: f32 = -(ARENA_H / 2.0);
 const LEFT_WALL:   f32 = -(ARENA_W / 2.0);
 const RIGHT_WALL:  f32 = ARENA_W / 2.0;
 
+// Paddle
+const PADDLE_W: f32 = 10.0;
+const PADDLE_H: f32 = 100.0;
+const PADDLE_DISTANCE_TO_WALL: f32 = 20.0;
+const PADDLE_SPEED: f32 = 300.0;
 
 fn main() {
     App::new()
@@ -43,8 +48,13 @@ fn main() {
         .add_systems(Update, close_on_esc)
         .add_event::<CollisionEvent>()
         .add_systems(Startup, setup)
-        .add_systems(Update, apply_velocity)
-        .add_systems(Update, check_for_collision)
+        .add_systems(
+            FixedUpdate, (
+                apply_velocity,
+                move_paddle,
+                check_for_collision,
+            ).chain() // chaining systems together runs them in order
+        )
         .run();
 }
 
@@ -149,6 +159,22 @@ fn setup(
         Ball,
         Velocity(BALL_INITIAL_DIRECTION.normalize() * BALL_SPEED),
     ));
+    // Paddles
+    commands.spawn((
+        MaterialMesh2dBundle {
+            mesh: Mesh2dHandle(meshes.add(Rectangle { half_size: Vec2::new(PADDLE_W, PADDLE_H) })),
+            material: materials.add(Color::ALICE_BLUE),
+            transform: Transform::from_translation(Vec3::new(
+                    LEFT_WALL + WALL_THICKNESS + PADDLE_DISTANCE_TO_WALL + PADDLE_W / 2.0,
+                    0.0,
+                    1.0,
+                )),
+            ..default()
+        },
+        Paddle,
+        Collider,
+        Velocity(Vec2::new(0.0, 0.0))
+    ));
 
     // Spawn Walls
     commands.spawn(WallBundle::new(WallLocation::Top));
@@ -175,7 +201,7 @@ fn check_for_collision(
     let (mut ball_velocity, ball_transform) = ball_query.single_mut();
 
     // check collision with Walls
-    for (_collider_entity, transform) in &collider_query {
+    for (collider_entity, transform) in &collider_query {
         let collision = collide_with_side(
             // `BALL_DIAMETER * 0.8` makes the ball overlap 20% before considerinc a
             // collision, this makes the "bounce" feel more natural
@@ -185,6 +211,7 @@ fn check_for_collision(
                 transform.scale.truncate() / 2.
             )
         );
+
 
         if let Some(collision) = collision {
             collision_events.send_default();
@@ -209,6 +236,31 @@ fn check_for_collision(
             }
         }
     }
+}
+
+fn move_paddle(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut Transform, With<Paddle>>,
+    time: Res<Time>
+) {
+    let mut paddle_transform = query.single_mut();
+    let mut direction = 0.0;
+
+    if keyboard_input.pressed(KeyCode::ArrowUp) {
+        direction += 1.0;
+    }
+
+    if keyboard_input.pressed(KeyCode::ArrowDown) {
+        direction -= 1.0;
+    }
+
+    let new_paddle_position = 
+        paddle_transform.translation.y + direction * time.delta_seconds() * PADDLE_SPEED;
+
+    let top_bound = TOP_WALL + WALL_THICKNESS / 2. - PADDLE_H - PADDLE_DISTANCE_TO_WALL;
+    let bottom_bound = BOTTOM_WALL - WALL_THICKNESS / 2. + PADDLE_H + PADDLE_DISTANCE_TO_WALL;
+
+    paddle_transform.translation.y = new_paddle_position.clamp(bottom_bound, top_bound);
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
